@@ -64,7 +64,7 @@ def init_config():
     #let's check if the user specified a DB name
     #if not name it after the input file
     if config['dbname'] == '':
-        config['dbname'] = config['inputfile'].split('.')[0]
+        config['dbname'] = config['inputfile'].split('.')[0].lower()
     config['baseurl'] = 'https://{0}.cloudant.com/'.format(config['username'])
     config['dburl'] = config['baseurl'] + config['dbname']
 
@@ -102,6 +102,19 @@ def initialize_db():
         print 'The database "{0}" already exists. Use -a to add records'.format(config['dbname'])
         sys.exit()
 
+    #make SPSSDocType view
+    headers = config['authheader']
+    headers.update({'Content-type': 'application/json'})
+    requestdata = {"_id": '_design/doctype',
+                   "views": {"doctype":
+                             {"map":"function(doc){if(doc.SPSSDocType){{emit(doc.SPSSDocType,null);}}}"}}}
+    r = requests.post(
+        config['dburl'],
+        headers = headers,
+        data = json.dumps(requestdata)
+    )
+
+
 def updatedb(requestdata):
     '''
     posts <requestdata> to the database as a bulk operation
@@ -110,50 +123,50 @@ def updatedb(requestdata):
     {'docs': [{<doc1>}, {doc2}, ... {docn}]}
 
     this essentially does:
-    curl -X POST 'https://<username>.cloudant.com/<dbname>/_bulk_docs' -H 'Cookie: <authcookie>' -H 'Content-type: application/json' -d '<requestdata>'
+    curl -X POST 'https://<username>.cloudant.com/<dbname>' -H 'Cookie: <authcookie>' -H 'Content-type: application/json' -d '<requestdata>'
     '''
     headers = config['authheader']
     headers.update({'Content-type': 'application/json'})
     r = requests.post(
-        config['dburl']+'/_bulk_docs',
+        config['dburl'],
         headers = headers,
-        data = json.dumps(requestdata)
+        data = json.dumps(requestdata, encoding='iso8859-1')
         )
 
-def read_inputfile():
+def process_header():
     '''
     read through the input file and do a bulk update for each <blocksize> rows
     '''
-    with SavHeaderReader(config['inputfile'], ioLocale='cp1252') as header:
-#        metadata = header.all()
+    headers = config['authheader']
+    headers.update({'Content-type': 'application/json'})
+    requesturl = config['dburl']+'/_design/doctype/_view/doctype?startkey="header"&endkey="header"'
+    r = requests.get(
+        requesturl,
+        headers = headers
+        )
+    result= json.loads(r.text)
+    with SavHeaderReader(config['inputfile'], ioLocale='en_US.ISO8859-1') as header:
         metadata = header.dataDictionary()
-#        updatedb(metadata)
+        metadata['SPSSDocType'] = 'header'
+        config['varNames'] = metadata['varNames']
+    if result['total_rows'] < 1:
+        updatedb(metadata)
 
-#        print metadata['valueLabels']
-#        pprint(metadata)
-        for x in metadata:
-#            print '***'
-            print x
-            print(json.dumps(metadata[x]))
-#            print type(metadata['valueLabels'][x])
-#            for y in  metadata[x].keys():
-#                print y
-#                print(json.dumps(metadata[x][y]))
-#                print type(metadata[x][y])
-#    with SavReader(config['inputfile'], rawMode=True) as reader:
-#        print(header)
-#        for line in reader:
-#            print(line)
-#            print('******')
-    return(1)
+def process_body():
+    with SavReader(config['inputfile'], ioLocale='en_US.ISO8859-1') as body:
+        for line in body:
+            document = dict(zip( config['varNames'], line))
+            document['SPSSDocType'] = 'data'
+            updatedb(document)
 
 def main(argv):
     parse_args(argv)
     init_config()
-#    get_password()
-#    authenticate()
-#    initialize_db()
-    fieldnames = read_inputfile()
+    get_password()
+    authenticate()
+    initialize_db()
+    process_header()
+    process_body()
 
 if __name__ == "__main__":
     main(sys.argv[1:])
