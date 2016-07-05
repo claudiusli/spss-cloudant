@@ -129,7 +129,7 @@ def get_body(header):
     for row in yaml.safe_load(r.text)['rows']:
          ids.append(row['id'])
     blocknumber = 0
-    blocksize = 2
+    blocksize = 200
     with SavWriter(config['outputfile'],
                    header['varNames'],
                    header['varTypes'],
