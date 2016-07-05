@@ -115,7 +115,7 @@ def initialize_db():
     )
 
 
-def updatedb(requestdata):
+def updatedb(requestdata, bulk=False):
     '''
     posts <requestdata> to the database as a bulk operation
     <requestdata> is expected to be a json file which consists of multiple documents
@@ -127,10 +127,21 @@ def updatedb(requestdata):
     '''
     headers = config['authheader']
     headers.update({'Content-type': 'application/json'})
-    r = requests.post(
-        config['dburl'],
-        headers = headers,
-        data = json.dumps(requestdata, encoding='iso8859-1')
+    if bulk:
+        dburl = config['dburl'] + '/_bulk_docs'
+        document = json.dumps(dict(docs=requestdata))
+        r = requests.post(
+            dburl,
+            headers = headers,
+            data = document
+        )
+    else:
+        dburl = config['dburl']
+        document = requestdata
+        r = requests.post(
+            dburl,
+            headers = headers,
+            data = json.dumps(document)
         )
 
 def process_header():
@@ -154,10 +165,14 @@ def process_header():
 
 def process_body():
     with SavReader(config['inputfile'], ioLocale='en_US.ISO8859-1') as body:
+        doclist=[]
         for line in body:
             document = dict(zip( config['varNames'], line))
             document['SPSSDocType'] = 'data'
-            updatedb(document)
+            doclist.append(document)
+            if len(doclist)>200:
+                doclist=[]
+        updatedb(doclist, bulk=True)
 
 def main(argv):
     parse_args(argv)

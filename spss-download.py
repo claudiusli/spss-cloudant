@@ -122,10 +122,14 @@ def get_body(header):
     headers = config['authheader']
     headers.update({'Content-type': 'application/json'})
     r = requests.get(
-        config['dburl'] + '/_design/doctype/_view/doctype?startkey="data"&endkey="data"&include_docs=true',
+        config['dburl'] + '/_design/doctype/_view/doctype?startkey="data"&endkey="data"',
         headers = headers
         )
-    all_data = []
+    ids = []
+    for row in yaml.safe_load(r.text)['rows']:
+         ids.append(row['id'])
+    blocknumber = 0
+    blocksize = 2
     with SavWriter(config['outputfile'],
                    header['varNames'],
                    header['varTypes'],
@@ -143,13 +147,20 @@ def get_body(header):
                    alignments = header['alignments'],
                    fileLabel = header['fileLabel'],
                    missingValues = header['missingValues']) as writer:
-        #for row in json.loads(r.text, encoding='iso8859-1')['rows']:
-        for row in yaml.safe_load(r.text)['rows']:
-            orderedrow = []
-            for varName in header['varNames']:
-                orderedrow.append(row['doc'][varName])
-            #pprint(orderedrow)
-            writer.writerow(orderedrow)
+        while blocknumber*blocksize < len(ids):
+            document = dict(
+                keys = ids[blocknumber*blocksize:(blocknumber+1)*blocksize])
+            blocknumber += 1
+            r = requests.post(
+                config['dburl'] + '/_all_docs?include_docs=true',
+                headers = headers,
+                data = json.dumps(document)
+                )
+            for row in yaml.safe_load(r.text)['rows']:
+                orderedrow = []
+                for varName in header['varNames']:
+                    orderedrow.append(row['doc'][varName])
+                writer.writerow(orderedrow)
 
 def get_data():
     header = get_header()
